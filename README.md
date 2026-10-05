@@ -9,7 +9,7 @@ decides what it may do.
 
 | Directory | What it is |
 |---|---|
-| `go/` | Go SDK. `go get github.com/Tech-Blend-Consulting/corelink-apps/go` |
+| `transit/` | Go SDK. `go get github.com/Tech-Blend-Consulting/corelink-apps/transit` |
 | `python/` | Python SDK |
 | `node/` | Node SDK |
 | `ruby/` | Ruby SDK |
@@ -23,7 +23,7 @@ decides what it may do.
 **Go**
 
 ```bash
-go get github.com/Tech-Blend-Consulting/corelink-apps/go
+go get github.com/Tech-Blend-Consulting/corelink-apps/transit
 ```
 
 **Python, Node, Ruby** — install from this repository:
@@ -73,7 +73,7 @@ Both are covered in the integration guide at
 ## Versioning
 
 Tagged alongside the platform. The Go module lives in a subdirectory, so its
-tags carry the directory prefix -- `go/v1.28.2` -- which is Go's convention for
+tags carry the directory prefix -- `transit/v1.28.2` -- which is Go's convention for
 a repository holding more than one module.
 
 ## Tests
@@ -84,7 +84,7 @@ format drift unless something pins them, and agreeing with each other is not the
 same as agreeing with the platform.
 
 ```bash
-cd go      && go test ./...
+cd transit && go test ./...
 cd python  && python3 -m unittest discover -s tests
 cd node    && npm test
 cd ruby    && ruby -Ilib test/sealed_test.rb
