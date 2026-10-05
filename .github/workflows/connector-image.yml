@@ -1,0 +1,62 @@
+# Publish the connector as a container image.
+#
+# The registry ships the connector as a binary, which suits a host but not
+# Kubernetes: a Deployment needs an image, and asking every customer to build and
+# host one of their own is work we can do once. This builds from
+# connector/Dockerfile -- which downloads the published release rather than
+# compiling anything -- and pushes it to this repository's own package registry.
+#
+# Runs on a tag, or by hand for a release that was tagged before this existed.
+name: connector image
+
+on:
+  push:
+    tags:
+      - 'connector/v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'CoreLink release to package, e.g. 1.28.3'
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out which release to package
+        id: release
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            # refs/tags/connector/v1.28.3 -> 1.28.3
+            echo "version=${GITHUB_REF_NAME#connector/v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The connector is published for linux/amd64 and linux/arm64, and clusters
+      # run both. Building one architecture would work until somebody's nodes
+      # were the other one.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./connector
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ steps.release.outputs.version }}
+          push: true
+          tags: |
+            ghcr.io/tech-blend-consulting/corelink-connector:${{ steps.release.outputs.version }}
+            ghcr.io/tech-blend-consulting/corelink-connector:latest

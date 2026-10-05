@@ -45,11 +45,18 @@ envelopes it has no authority to open, so the application can fetch a secret
 without a route to the platform and without anything on the path being able to
 read it.
 
-Download the binary from the registry, or build an image:
+For Kubernetes the image is published and pulls anonymously:
+
+```
+ghcr.io/tech-blend-consulting/corelink-connector:1.28.3
+```
+
+For a host, download the binary from the registry. To host the image yourself,
+`connector/Dockerfile` wraps the released binary:
 
 ```bash
 cd connector
-docker build --build-arg VERSION=1.28.2 -t corelink-connector:1.28.2 .
+docker build --build-arg VERSION=1.28.3 -t corelink-connector:1.28.3 .
 ```
 
 The binary itself is published per platform at
