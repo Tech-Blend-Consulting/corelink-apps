@@ -9,7 +9,7 @@ decides what it may do.
 
 | Directory | What it is |
 |---|---|
-| `go/` | Go SDK. `go get github.com/dw-develop/tech-blend-corelink-apps/go` |
+| `go/` | Go SDK. `go get github.com/Tech-Blend-Consulting/corelink-apps/go` |
 | `python/` | Python SDK |
 | `node/` | Node SDK |
 | `ruby/` | Ruby SDK |
@@ -23,15 +23,15 @@ decides what it may do.
 **Go**
 
 ```bash
-go get github.com/dw-develop/tech-blend-corelink-apps/go
+go get github.com/Tech-Blend-Consulting/corelink-apps/go
 ```
 
 **Python, Node, Ruby** — install from this repository:
 
 ```bash
-pip install "git+https://github.com/dw-develop/tech-blend-corelink-apps.git#subdirectory=python"
-npm install github:dw-develop/tech-blend-corelink-apps#main --prefix-path node
-bundle add corelink --git https://github.com/dw-develop/tech-blend-corelink-apps --glob ruby/*.gemspec
+pip install "git+https://github.com/Tech-Blend-Consulting/corelink-apps.git#subdirectory=python"
+npm install github:Tech-Blend-Consulting/corelink-apps#main --prefix-path node
+bundle add corelink --git https://github.com/Tech-Blend-Consulting/corelink-apps --glob ruby/*.gemspec
 ```
 
 **Java and .NET** — copy the source in. Both are deliberately dependency-free:
