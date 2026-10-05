@@ -15,7 +15,7 @@
 //	docker compose exec -T postgres psql -U secrets -d secrets_mgmt < tests/e2e/delivery/fixtures.sql
 //	tbcl-transit-agent --nhi-id 11111111-1111-1111-1111-111111111111 \
 //	  --platform http://localhost:8080 --envelope-addr 127.0.0.1:9092
-//	go test -tags e2e ./sdk/go/transit/ -run TestE2E -v
+//	go test -tags e2e ./sdk/go/ -run TestE2E -v
 //
 // The secrets and grants come from tests/e2e/delivery; see docs/secret-delivery.md.
 package transit

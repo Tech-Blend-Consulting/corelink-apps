@@ -13,7 +13,7 @@
 //
 //	docker compose up -d
 //	docker compose exec -T postgres psql -U secrets -d secrets_mgmt < tests/e2e/delivery/fixtures.sql
-//	go test -tags e2e ./sdk/go/transit/ -run TestE2E_Lease -v
+//	go test -tags e2e ./sdk/go/ -run TestE2E_Lease -v
 //
 // See docs/secret-delivery.md.
 package transit
