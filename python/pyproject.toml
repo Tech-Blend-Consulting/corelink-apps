@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "techblend-transit"
+version = "0.1.0"
+description = "Transit API client for Tech Blend Secrets Management"
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.20",
+    # AES-256-GCM, to open a sealed envelope. Python has no AEAD in the standard
+    # library, and the alternative is the application holding plaintext fetched
+    # by something else -- which is what this SDK exists to avoid.
+    "cryptography>=3.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/techblend/secrets-mgmt"

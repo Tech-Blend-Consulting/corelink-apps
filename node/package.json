@@ -1,0 +1,27 @@
+{
+  "name": "@techblend/transit",
+  "version": "0.1.0",
+  "description": "Transit API client for Tech Blend Secrets Management",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "lib/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/techblend/secrets-mgmt",
+  "keywords": [
+    "secrets",
+    "transit",
+    "nhi",
+    "corelink"
+  ]
+}

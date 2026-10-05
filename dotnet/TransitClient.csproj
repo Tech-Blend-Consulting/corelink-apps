@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    An executable rather than a library, because SealedTest.cs is the SDK's test
+    and this SDK has no test framework: it is a dependency-free pair of files,
+    and a framework would be the only dependency in the tree.
+
+    Run the test with:  dotnet run
+
+    Reference the SDK from an application by copying TransitClient.cs and
+    Sealed.cs, or by switching OutputType to Library and dropping SealedTest.cs
+    from the compile set.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TransitClient</AssemblyName>
+    <RootNamespace>TechBlend.Transit</RootNamespace>
+    <!-- AesGcm needs 6+; 8.0 is the long-term support release. -->
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

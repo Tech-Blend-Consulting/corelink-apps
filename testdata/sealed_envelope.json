@@ -1,0 +1,10 @@
+{
+  "secret_id": "6edba51b-0ad8-4e0c-afbe-8cf5c336ce8f",
+  "version": 3,
+  "envelope": "eyJlbmNyeXB0ZWRfZGVrIjoiNE90UjMrVlNyWm9Bc3ZmMURNTkM5VFVzcEl1eXdnS2ZpYVdGOFR0bjlJS1U3SEVEdmFSZFNZR0kvVk5QNXYyMkZWdDZHVTFrbjFhdHRKdUYiLCJlbmNyeXB0ZWRfZGF0YSI6IkRXOEpNMktpZWpQamNlVTZzaU1oK2xRMW5HRmRNZktodTZiMi9tRTIxb1RCQ1RYanZzTHQ0QmJRVFlKWlZ2c0szZz09Iiwibm9uY2UiOiI3YlNJZC9vVUg0UUpBc2E0IiwiYWFkIjoiWTJ3dWMyVmpjbVYwTG5ZeGZEWmxaR0poTlRGaUxUQmhaRGd0TkdVd1l5MWhabUpsTFRoalpqVmpNek0yWTJVNFpud3oiLCJrZWtfa2V5X2lkIjoiZml4dHVyZSIsImtla19wcm92aWRlciI6ImZpeHR1cmUiLCJhbGdvcml0aG0iOiJBRVMtMjU2LUdDTSIsIndyYXBfYWxnb3JpdGhtIjoiQUVTLTI1Ni1HQ00iLCJrZXlfdmVyc2lvbiI6MSwiY3JlYXRlZF9hdCI6IjIwMjYtMTAtMDRUMjM6MDk6MDUuNzQ4MjE5WiJ9",
+  "dek": "H0DMa0Ge0Kv8YZuDYcnFlpitSrGeYtulsWpCgWqRNcQ=",
+  "aad": "Y2wuc2VjcmV0LnYxfDZlZGJhNTFiLTBhZDgtNGUwYy1hZmJlLThjZjVjMzM2Y2U4Znwz",
+  "expected_plaintext": "{\"value\":\"the-one-true-password\"}",
+  "expected_value": "the-one-true-password",
+  "note": "Produced by internal/crypto, which is what CoreLink stores and what the unwrap endpoint returns. Every SDK must open this with AAD = \"cl.secret.v1|\u003csecret_id\u003e|\u003cversion\u003e\" rebuilt from secret_id and version, not read from the envelope. Regenerate with go test ./internal/crypto/ -run TestSDKFixture -update."
+}

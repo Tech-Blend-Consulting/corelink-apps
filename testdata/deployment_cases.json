@@ -1,0 +1,208 @@
+{
+  "note": "Shared cases for the deployment file reader. Every SDK parses these and must agree: six hand-written readers drift unless one thing pins them. Accepted cases carry the expected result; rejected cases must be refused rather than read as something else. See docs/secret-delivery.md.",
+  "accepted": [
+    {
+      "name": "the documented shape",
+      "text": "# the orders service\nnhiId:          11111111-2222-3333-4444-555555555555\nserviceAccount: orders\nsecrets:\n  - production/dbone\n  - production/apikey\n",
+      "nhiId": "11111111-2222-3333-4444-555555555555",
+      "serviceAccount": "orders",
+      "secrets": [
+        "production/dbone",
+        "production/apikey"
+      ]
+    },
+    {
+      "name": "one secret inline",
+      "text": "nhiId: abc\nsecrets: production/dbone\n",
+      "nhiId": "abc",
+      "serviceAccount": "",
+      "secrets": [
+        "production/dbone"
+      ]
+    },
+    {
+      "name": "no serviceAccount",
+      "text": "nhiId: abc\nsecrets:\n  - production/one\n",
+      "nhiId": "abc",
+      "serviceAccount": "",
+      "secrets": [
+        "production/one"
+      ]
+    },
+    {
+      "name": "quoted values",
+      "text": "nhiId: \"abc\"\nserviceAccount: 'orders'\nsecrets:\n  - \"production/one\"\n",
+      "nhiId": "abc",
+      "serviceAccount": "orders",
+      "secrets": [
+        "production/one"
+      ]
+    },
+    {
+      "name": "a quoted colon in a name",
+      "text": "nhiId: a\nsecrets: \"prod:one\"\n",
+      "nhiId": "a",
+      "serviceAccount": "",
+      "secrets": [
+        "prod:one"
+      ]
+    },
+    {
+      "name": "blank lines and comments throughout",
+      "text": "\n# top\n\nnhiId: abc\n\n# which secrets\nsecrets:\n\n  - production/one\n\n",
+      "nhiId": "abc",
+      "serviceAccount": "",
+      "secrets": [
+        "production/one"
+      ]
+    },
+    {
+      "name": "snake_case keys",
+      "text": "nhi_id: abc\nservice_account: orders\nsecrets: production/one\n",
+      "nhiId": "abc",
+      "serviceAccount": "orders",
+      "secrets": [
+        "production/one"
+      ]
+    },
+    {
+      "name": "nhiID spelling",
+      "text": "nhiID: abc\nsecrets: production/one\n",
+      "nhiId": "abc",
+      "serviceAccount": "",
+      "secrets": [
+        "production/one"
+      ]
+    },
+    {
+      "name": "file order is kept",
+      "text": "nhiId: a\nsecrets:\n  - z/last\n  - a/first\n",
+      "nhiId": "a",
+      "serviceAccount": "",
+      "secrets": [
+        "z/last",
+        "a/first"
+      ]
+    },
+    {
+      "name": "trailing whitespace",
+      "text": "nhiId: abc   \nsecrets: production/one   \n",
+      "nhiId": "abc",
+      "serviceAccount": "",
+      "secrets": [
+        "production/one"
+      ]
+    },
+    {
+      "name": "no trailing newline",
+      "text": "nhiId: abc\nsecrets: production/one",
+      "nhiId": "abc",
+      "serviceAccount": "",
+      "secrets": [
+        "production/one"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "name": "a flow sequence",
+      "text": "nhiId: a\nsecrets: [one, two]\n"
+    },
+    {
+      "name": "a flow mapping",
+      "text": "nhiId: a\nsecrets: {a: b}\n"
+    },
+    {
+      "name": "a multi-line scalar",
+      "text": "nhiId: a\nsecrets: |\n  production/dbone\n"
+    },
+    {
+      "name": "a folded scalar",
+      "text": "nhiId: a\nsecrets: >\n  production/dbone\n"
+    },
+    {
+      "name": "an anchor",
+      "text": "nhiId: &x a\nsecrets: production/dbone\n"
+    },
+    {
+      "name": "an alias",
+      "text": "nhiId: a\nsecrets: *x\n"
+    },
+    {
+      "name": "a second document",
+      "text": "nhiId: a\nsecrets: one\n---\nnhiId: b\n"
+    },
+    {
+      "name": "a tab in indentation",
+      "text": "nhiId: a\nsecrets:\n\t- one\n"
+    },
+    {
+      "name": "a nested map",
+      "text": "nhiId: a\nsecrets: one\n  nested: two\n"
+    },
+    {
+      "name": "an unknown key",
+      "text": "nhiId: a\nsecrets: one\nextra: two\n"
+    },
+    {
+      "name": "a duplicate key",
+      "text": "nhiId: a\nnhiId: b\nsecrets: one\n"
+    },
+    {
+      "name": "a line that is not a pair",
+      "text": "nhiId: a\njust-a-word\n"
+    },
+    {
+      "name": "a list entry with no key",
+      "text": "- one\n"
+    },
+    {
+      "name": "an unterminated double quote",
+      "text": "nhiId: \"a\nsecrets: one\n"
+    },
+    {
+      "name": "an unterminated single quote",
+      "text": "nhiId: 'a\nsecrets: one\n"
+    },
+    {
+      "name": "an unquoted hash",
+      "text": "nhiId: a\nsecrets: prod/one # comment\n"
+    },
+    {
+      "name": "an empty list entry",
+      "text": "nhiId: a\nsecrets:\n  -\n"
+    },
+    {
+      "name": "no space after the colon",
+      "text": "nhiId:abc\nsecrets: one\n"
+    },
+    {
+      "name": "an unquoted colon in a value",
+      "text": "nhiId: a\nsecrets: prod: one\n"
+    },
+    {
+      "name": "a value ending in a colon",
+      "text": "nhiId: a\nsecrets: prod:\n"
+    },
+    {
+      "name": "a list under a key that takes no list",
+      "text": "nhiId:\n  - a\nsecrets: one\n"
+    },
+    {
+      "name": "no nhiId",
+      "text": "secrets: production/one\n"
+    },
+    {
+      "name": "no secrets",
+      "text": "nhiId: abc\n"
+    },
+    {
+      "name": "an empty file",
+      "text": ""
+    },
+    {
+      "name": "only comments",
+      "text": "# nothing here\n"
+    }
+  ]
+}

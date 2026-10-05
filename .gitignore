@@ -1,0 +1,7 @@
+# Build output
+obj/
+bin/
+*.class
+__pycache__/
+*.pyc
+node_modules/

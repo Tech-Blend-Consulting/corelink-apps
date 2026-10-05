@@ -1,0 +1,10 @@
+{
+  "secret_id": "6edba51b-0ad8-4e0c-afbe-8cf5c336ce8f",
+  "version": 3,
+  "envelope": "eyJlbmNyeXB0ZWRfZGVrIjoiWFVYeUNZNGhPbk1laktvSFpGSlcyU0JxRmE1TERsQ3VkUUkzb0xtS295WWRTV2VETFRkbGtNeFNZSUxKUnpBTUoyMFNQV2ozT1hKMTVzN1giLCJlbmNyeXB0ZWRfZGF0YSI6ImJEUy9JWDI5UjltTHlJN0FPaGFsaldRTGNEUCtvbWZ6S0pFd2dycmVMT3RRNnpyaXhicDIrc1JGZld6Ni9nc0JRdz09Iiwibm9uY2UiOiJUSHJKejR0cXo2TGNBREtHIiwia2VrX2tleV9pZCI6ImZpeHR1cmUiLCJrZWtfcHJvdmlkZXIiOiJmaXh0dXJlIiwiYWxnb3JpdGhtIjoiQUVTLTI1Ni1HQ00iLCJ3cmFwX2FsZ29yaXRobSI6IkFFUy0yNTYtR0NNIiwia2V5X3ZlcnNpb24iOjEsImNyZWF0ZWRfYXQiOiIyMDI2LTEwLTA0VDIzOjA5OjA1Ljc0OTEyOVoifQ==",
+  "dek": "YnFUyC+3DgCQQuD2FfF5D+c3OQ+oq2ZWioy34497seI=",
+  "aad": "",
+  "expected_plaintext": "{\"value\":\"the-one-true-password\"}",
+  "expected_value": "the-one-true-password",
+  "note": "Sealed with NO additional authenticated data, as every secret written before binding existed was. An SDK must open this by using the AAD the envelope was sealed under -- nothing -- rather than the one it would rebuild, or no existing secret can be delivered through the sealed path."
+}
