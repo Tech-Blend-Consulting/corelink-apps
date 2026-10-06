@@ -43,11 +43,15 @@ func (c *Client) collectAttestation() (string, string, error) {
 type AttestFunc func() (attestType, evidence string, err error)
 
 type Options struct {
-	// TransitURL is the base URL of a transit agent. Leave it empty to talk to
-	// the platform directly, which is the ordinary arrangement: there is then
-	// nothing beside the application holding its secrets. An agent is for an
-	// application with no route out, or a host where sharing one session across
-	// several processes is worth a component.
+	// TransitURL is the base URL of a connector -- the transit agent running
+	// beside this application. Setting it is the ordinary arrangement: the
+	// connector holds the sealed envelope under secrets:cache and this
+	// application opens it under secrets:unwrap, so neither half is worth
+	// anything alone.
+	//
+	// Leave it empty to talk to the platform directly and read plaintext under
+	// secrets:read. That is for an application that cannot run a second process
+	// next to it, such as a managed function; it gives up the split above.
 	TransitURL string
 	// PlatformURL is the base URL of the Tech Blend platform, used for NHI
 	// connect and heartbeat calls. Required when NHIID is set.

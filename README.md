@@ -48,7 +48,7 @@ read it.
 For Kubernetes the image is published and pulls anonymously:
 
 ```
-ghcr.io/tech-blend-consulting/corelink-connector:1.28.6
+ghcr.io/tech-blend-consulting/corelink-connector:1.28.7
 ```
 
 For a host, download the binary from the registry. To host the image yourself,
@@ -56,7 +56,7 @@ For a host, download the binary from the registry. To host the image yourself,
 
 ```bash
 cd connector
-docker build --build-arg VERSION=1.28.6 -t corelink-connector:1.28.6 .
+docker build --build-arg VERSION=1.28.7 -t corelink-connector:1.28.7 .
 ```
 
 The binary itself is published per platform at
@@ -71,11 +71,13 @@ is in `latest.json`.
 route from a stored secret to a usable credential is the two in series and the
 connector alone is worth nothing.
 
-**Without one** — a SaaS product or a function that cannot run a sidecar
-federates to its own OIDC issuer and reads directly with `secrets:read`.
+**Without one** — a SaaS product or a function that cannot run a second
+process federates to its own OIDC issuer and reads directly with
+`secrets:read`.
 
-Both are covered in the integration guide at
-<https://usecorelink.com/docs/integrating-an-application>.
+If you are not sure which of the two you want, start at
+<https://usecorelink.com/docs/choosing-your-integration>, which picks between
+them and says what to download for each.
 
 ## Versioning
 
