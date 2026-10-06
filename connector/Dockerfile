@@ -28,6 +28,14 @@ RUN apk add --no-cache curl ca-certificates \
 
 FROM alpine:3.20
 
+# image.source is what a registry and a tooling chain read to get from an image
+# back to the repository it was built from; without it this image described
+# neither its origin nor itself. No image.licenses label: this repository states
+# no licence, and the node SDK says UNLICENSED, so any SPDX value here would be
+# an invented claim.
+LABEL org.opencontainers.image.source="https://github.com/Tech-Blend-Consulting/corelink-apps" \
+      org.opencontainers.image.description="CoreLink connector: serves envelopes it holds no key to open"
+
 # ca-certificates so the connector can verify the platform's TLS.
 RUN apk add --no-cache ca-certificates \
  && adduser -D -u 10001 corelink
