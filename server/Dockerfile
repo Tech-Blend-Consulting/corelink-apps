@@ -8,15 +8,18 @@
 #
 #   docker build --build-arg VERSION=1.28.3 -t corelink-server:1.28.3 .
 #
-# For a host on a different architecture, pass TARGETARCH (amd64 or arm64) or let
-# buildx set it:
+# The architecture comes from BuildKit's TARGETARCH, which is the --platform being
+# built (the host's when none is given). It must not have a default here: a
+# default overrides BuildKit's value, which is how every linux/arm64 image up to
+# v1.28.52 shipped amd64 binaries. The build fails if the binary in the image is
+# not the architecture it is labelled:
 #
 #   docker buildx build --platform linux/arm64 --build-arg VERSION=1.28.3 .
 
 FROM alpine:3.23 AS fetch
 
 ARG VERSION
-ARG TARGETARCH=amd64
+ARG TARGETARCH
 ARG REGISTRY=https://usecorelink.com
 
 RUN test -n "$VERSION" || (echo "VERSION is required, e.g. --build-arg VERSION=1.28.3" >&2; exit 1)
@@ -39,6 +42,14 @@ RUN apk add --no-cache curl ca-certificates \
  && rmdir /app/bin \
  && mv /app/migrations /migrations \
  && mkdir -p /app/configs /app/data
+
+# The binary must be the architecture this image is built for, which is the one
+# this stage runs as (uname -m), whatever TARGETARCH says: ELF machine 3e is
+# x86-64, b7 is AArch64 (byte 18 of the header).
+RUN case "$(uname -m)" in x86_64) want=3e ;; aarch64) want=b7 ;; \
+      *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;; esac \
+ && got=$(od -An -tx1 -j18 -N1 /app/tbcl-server | tr -d ' ') \
+ && if [ "$got" != "$want" ]; then echo "/app/tbcl-server is not $(uname -m) (ELF machine $got, TARGETARCH $TARGETARCH)" >&2; exit 1; fi
 
 FROM alpine:3.23
 
