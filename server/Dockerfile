@@ -22,7 +22,10 @@ ARG REGISTRY=https://usecorelink.com
 RUN test -n "$VERSION" || (echo "VERSION is required, e.g. --build-arg VERSION=1.28.3" >&2; exit 1)
 
 # The checksums file is published beside the archives. Verify before unpacking:
-# a tarball that does not match is a failed build, not a warning.
+# a tarball that does not match is a failed build, not a warning. Archives
+# built on macOS before COPYFILE_DISABLE was exported carry "._name" files
+# beside every file; they are dropped, so bin/ empties and nothing of the kind
+# reaches the image.
 RUN apk add --no-cache curl ca-certificates \
  && mkdir -p /dl /app \
  && cd /dl \
@@ -31,6 +34,7 @@ RUN apk add --no-cache curl ca-certificates \
  && grep " corelink-server-v${VERSION}-linux-${TARGETARCH}.tar.gz\$" "corelink-v${VERSION}-checksums.txt" > server.sha256 \
  && sha256sum -c server.sha256 \
  && tar xzf "corelink-server-v${VERSION}-linux-${TARGETARCH}.tar.gz" -C /app \
+ && find /app -name '._*' -delete \
  && mv /app/bin/tbcl-server /app/bin/migrate /app/ \
  && rmdir /app/bin \
  && mv /app/migrations /migrations \
