@@ -1,0 +1,49 @@
+{{- if .Values.ingress.enabled }}
+# Example for the ingress-nginx controller. Any ingress or load balancer works if
+# it does what the annotations in values.yaml do:
+#
+#   - terminate TLS and pass Host
+#   - set X-Forwarded-For (appending is fine) and X-Forwarded-Proto
+#   - allow WebSocket upgrades on /ws/* (SSH sessions)
+#   - pass /remoteDesktopGateway/ (RDP gateway, long-lived streams)
+#   - allow request bodies up to 100m
+#
+# ingress-nginx upgrades WebSockets and sets the forwarded headers by itself;
+# the timeouts keep long sessions from being cut. Set config.trustedProxyCidrs
+# to the controller's pod range, or client IPs read as the controller's address.
+# Other controllers need their own WebSocket and timeout settings (Traefik and
+# Envoy-based ones handle upgrades without extra flags).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "corelink.fullname" . }}
+  labels:
+    {{- include "corelink.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ include "corelink.fullname" $ }}
+                port:
+                  name: http
+          {{- end }}
+    {{- end }}
+{{- end }}

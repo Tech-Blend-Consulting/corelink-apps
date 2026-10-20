@@ -1,0 +1,121 @@
+{{- if and .Values.license.existingSecret .Values.persistence.enabled }}
+{{- fail "license.existingSecret supplies CORELINK_LICENSE and needs persistence.enabled=false: the server refuses to start with both the file and the content" }}
+{{- end }}
+# One replica keeps the KEK volume (ReadWriteOnce) simple. More replicas behind
+# the Service are safe (the scheduler lock lets one run the schedulers) but need
+# a ReadWriteMany volume for /app/data, or a cloud KMS and a license that every
+# replica can read.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "corelink.fullname" . }}
+  labels:
+    {{- include "corelink.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "corelink.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      {{- if or .Values.rollOnConfigChange .Values.podAnnotations }}
+      annotations:
+        {{- if .Values.rollOnConfigChange }}
+        checksum/config: {{ include "corelink.config" . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      labels:
+        {{- include "corelink.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: tbcl-server
+          image: {{ include "corelink.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: {{ include "corelink.fullname" . }}-config
+            - secretRef:
+                name: {{ include "corelink.secretName" . }}
+          {{- if or .Values.license.existingSecret .Values.extraEnv }}
+          env:
+            {{- if .Values.license.existingSecret }}
+            - name: CORELINK_LICENSE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.license.existingSecret }}
+                  key: {{ .Values.license.key }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          # /health is liveness, /ready is readiness; GET and HEAD both answer.
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            {{- if include "corelink.dbCASecret" . }}
+            - name: db-ca
+              mountPath: /app/certs
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" (include "corelink.fullname" .)) .Values.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if include "corelink.dbCASecret" . }}
+        - name: db-ca
+          secret:
+            secretName: {{ include "corelink.dbCASecret" . }}
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

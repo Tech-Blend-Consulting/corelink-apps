@@ -1,0 +1,46 @@
+CoreLink {{ .Values.image.tag | default .Chart.AppVersion }} is installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+1. Wait for the server:
+
+   kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "corelink.fullname" . }}
+
+2. Claim the instance. A fresh instance has no admin; print the one-time setup
+   link and open it in your browser:
+
+   kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "corelink.fullname" . }} -- tbcl-server setup-link
+
+   The link carries the public URL ({{ .Values.config.publicUrl }}). Lost it? Run the
+   command again. After an admin exists it prints nothing.
+
+3. The instance starts locked until it holds a license. Sign in, then open
+   /admin/platform: request a 14-day trial there, or upload the license file
+   you were issued.
+{{- if .Values.ingress.enabled }}
+
+Ingress: {{ range .Values.ingress.hosts }}https://{{ .host }} {{ end }}
+{{- else }}
+
+Ingress is off. Reach the server with:
+
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "corelink.fullname" . }} 8080:{{ .Values.service.port }}
+
+and set config.publicUrl and an ingress (or your own load balancer) before real use.
+{{- end }}
+{{- if and (eq .Values.kms.provider "local") .Values.persistence.enabled }}
+
+Back up the data volume: it holds the local key (kek.key). Losing it makes every
+stored secret unrecoverable.
+{{- end }}
+{{- if not (or .Values.existingSecret .Values.secret.create) }}
+
+This release reads DATABASE_PASSWORD, JWT_SECRET and SESSION_SECRET from the
+Secret "{{ include "corelink.secretName" . }}". If the pods report a missing Secret, create it:
+
+   kubectl -n {{ .Release.Namespace }} create secret generic {{ include "corelink.secretName" . }} \
+     --from-literal=DATABASE_PASSWORD='...' \
+     --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
+     --from-literal=SESSION_SECRET="$(openssl rand -hex 32)"
+{{- end }}
+
+Upgrade with: helm upgrade {{ .Release.Name }} <chart> --version <next> -f values.yaml
+The migration hook runs first; a failed migration fails the upgrade.

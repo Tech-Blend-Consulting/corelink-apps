@@ -1,0 +1,135 @@
+# Publish the CoreLink Helm chart as an OCI chart.
+#
+# A self-hosted install runs
+#   helm install corelink oci://ghcr.io/tech-blend-consulting/charts/corelink --version <x>
+# The chart is mirrored into chart/ from the source repository. It is packaged
+# with --version and --app-version set to the release, so the chart version and
+# the default image tag (the chart's appVersion) are the release, and it is
+# pushed with the workflow's own token and signed keylessly, like the server
+# image. No machine of ours holds a registry login or a signing key.
+#
+# Unlike the images there is no "latest" alias: a chart is installed by an
+# explicit --version, and an alias would move when an older release is
+# republished.
+#
+# Retention: the newest three releases are kept, like the images. The last step
+# deletes older chart versions and their signatures from the package.
+#
+# Runs on a tag, or by hand for a release that was tagged before this existed.
+name: chart
+
+on:
+  push:
+    tags:
+      - 'chart/v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'CoreLink release to package, e.g. 1.28.3'
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+  # Keyless cosign signs with the workflow's OIDC identity: no key to hold.
+  id-token: write
+
+env:
+  CHART_REPO: ghcr.io/tech-blend-consulting/charts
+  CHART_PACKAGE: charts/corelink
+  KEEP_RELEASES: 3
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out which release to package
+        id: release
+        env:
+          # Passed through env, never interpolated into the script: a crafted
+          # dispatch value must not run as shell in a job holding packages: write.
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
+          else
+            # refs/tags/chart/v1.28.3 -> 1.28.3
+            version="${GITHUB_REF_NAME#chart/v}"
+          fi
+          # The prune step only recognises x.y.z tags, so refuse anything else.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "release version must be x.y.z"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-helm@v4
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Check the chart
+        run: helm lint ./chart
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          helm package ./chart \
+            --version "$VERSION" \
+            --app-version "$VERSION"
+
+      - name: Log in to ghcr.io
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Push
+        id: push
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          helm push "corelink-${VERSION}.tgz" "oci://${CHART_REPO}" 2>&1 | tee push.log
+          digest="$(awk '/^Digest:/ {print $2}' push.log)"
+          [ -n "$digest" ] || { echo "helm push did not report a digest"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Sign the chart digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "${CHART_REPO}/corelink@${DIGEST}"
+
+      # Keep the newest KEEP_RELEASES releases. A version is a package version
+      # tagged x.y.z; its signature is the version tagged sha256-<digest>.sig,
+      # which goes with it.
+      #
+      # Only on a tag: republishing an older release by hand would otherwise
+      # prune the version it just signed.
+      - name: Prune old chart versions
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          encoded="${CHART_PACKAGE//\//%2F}"
+          gh api --paginate "/orgs/${OWNER}/packages/container/${encoded}/versions?per_page=100" | jq -s 'add // []' > versions.json
+          jq -r --argjson keep "$KEEP_RELEASES" '
+            def release: .metadata.container.tags | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) | .[0];
+            . as $all
+            | [ .[] | select(release != null) ]
+            | sort_by(release | split(".") | map(tonumber))
+            | reverse
+            | .[$keep:]
+            | map(
+                . as $v
+                | $v.id,
+                  ( $all[]
+                    | select(.metadata.container.tags | index("sha256-" + ($v.name | ltrimstr("sha256:")) + ".sig"))
+                    | .id )
+              )
+            | unique
+            | .[]
+          ' versions.json | while read -r id; do
+            echo "deleting chart package version $id"
+            gh api --method DELETE "/orgs/${OWNER}/packages/container/${encoded}/versions/${id}"
+          done

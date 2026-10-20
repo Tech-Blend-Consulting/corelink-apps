@@ -1,0 +1,9 @@
+# Non-secret settings. Every key is documented in corelink.env.example.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "corelink.fullname" . }}-config
+  labels:
+    {{- include "corelink.labels" . | nindent 4 }}
+data:
+  {{- include "corelink.config" . | nindent 2 }}

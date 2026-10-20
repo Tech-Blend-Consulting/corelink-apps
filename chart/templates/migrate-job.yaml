@@ -1,0 +1,80 @@
+# Runs the pending migrations, then exits. It is the same image as the server
+# with /app/migrate as the entrypoint.
+{{- if .Values.migrate.hook }}
+# This Job is a Helm pre-install and pre-upgrade hook: helm install and helm
+# upgrade run it first, wait for it, and fail the release if it fails, so the
+# new pods never start on an old schema. It reads the settings inline because
+# the ConfigMap does not exist yet on the first install.
+{{- else }}
+# Apply it before (and wait for it ahead of) the Deployment on every install and
+# upgrade. A Job's pod template cannot change, so delete the old Job before
+# applying a new version:
+#
+#   kubectl delete job corelink-migrate --ignore-not-found
+#   kubectl apply -f migrate-job.yaml
+#   kubectl wait --for=condition=complete job/corelink-migrate --timeout=10m
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "corelink.fullname" . }}-migrate
+  labels:
+    {{- include "corelink.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  {{- if .Values.migrate.hook }}
+  annotations:
+    {{- include "corelink.hookAnnotations" (dict "weight" "0") | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migrate.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "corelink.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml (omit .Values.podSecurityContext "fsGroup") | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "corelink.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/migrate"]
+          env:
+            - name: MIGRATION_COMMAND
+              value: up
+            {{- if .Values.migrate.hook }}
+            {{- range $k, $v := (include "corelink.config" . | fromYaml) }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- end }}
+          envFrom:
+            {{- if not .Values.migrate.hook }}
+            - configMapRef:
+                name: {{ include "corelink.fullname" . }}-config
+            {{- end }}
+            - secretRef:
+                name: {{ include "corelink.secretName" . }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          {{- if include "corelink.dbCASecret" . }}
+          volumeMounts:
+            - name: db-ca
+              mountPath: /app/certs
+              readOnly: true
+          {{- end }}
+      {{- if include "corelink.dbCASecret" . }}
+      volumes:
+        - name: db-ca
+          secret:
+            secretName: {{ include "corelink.dbCASecret" . }}
+      {{- end }}

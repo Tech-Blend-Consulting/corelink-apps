@@ -1,0 +1,171 @@
+# CoreLink self-hosted chart. Every value below is the documented default.
+#
+# Required for a working install (the defaults are placeholders):
+#   config.publicUrl, config.trustedProxyCidrs, database.host, and a Secret
+#   holding DATABASE_PASSWORD, JWT_SECRET and SESSION_SECRET (see existingSecret).
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  # Point this at your own mirror when you run from a private registry.
+  repository: ghcr.io/tech-blend-consulting/corelink-server
+  # Defaults to the chart's appVersion (the release the chart was packaged with).
+  tag: ""
+  # Optional sha256:... digest; when set it is used instead of the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 1
+# The data volume is ReadWriteOnce by default: stop the old pod before starting
+# the new one. Use RollingUpdate with several replicas, a ReadWriteMany volume
+# or a cloud KMS.
+strategy:
+  type: Recreate
+
+resources: {}
+podAnnotations: {}
+podLabels: {}
+# Restart the pods when the configuration changes.
+rollOnConfigChange: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# /health is liveness, /ready is readiness; GET and HEAD both answer.
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+startupProbe:
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 5
+  failureThreshold: 30
+
+# Non-secret settings; each one is documented in ../../corelink.env.example.
+config:
+  environment: production
+  logLevel: info
+  # REQUIRED: the public URL your ingress serves.
+  publicUrl: https://corelink.example.com
+  # Defaults to publicUrl.
+  corsAllowedOrigins: ""
+  # REQUIRED: the pod CIDR or address range of your ingress controller.
+  # Forwarded headers are trusted only from peers inside it.
+  trustedProxyCidrs: 10.0.0.0/8
+  # Any further environment variable from corelink.env.example, as KEY: value.
+  extra: {}
+
+# External PostgreSQL only: bring your own.
+database:
+  # REQUIRED
+  host: postgres.example.internal
+  port: 5432
+  name: secrets_mgmt
+  user: corelink
+  # require, verify-ca or verify-full. "disable" is refused in production.
+  sslmode: require
+  # For verify-ca and verify-full: the CA bundle (PEM) that signed the server
+  # certificate, either from an existing Secret (key ca.pem) or inline (a CA
+  # certificate is public, so pem is safe as a plain value). Leave both empty
+  # to verify against the container's system roots, or for sslmode require.
+  sslRootCert:
+    secretName: ""
+    pem: ""
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+
+# local keeps the KEK on the /app/data volume: back it up. Use aws, azure or
+# gcp to keep the key off the disk (add the provider's variables to
+# config.extra and its credentials to extraEnv).
+kms:
+  provider: local
+
+# With persistence off and a cloud KMS, supply the license as content from a
+# Secret: it becomes CORELINK_LICENSE.
+license:
+  existingSecret: ""
+  key: license.json
+
+# The name of an existing Secret holding DATABASE_PASSWORD, JWT_SECRET and
+# SESSION_SECRET. Defaults to <release>-secrets. Create it yourself (or from
+# your secret store) before installing; never regenerate JWT_SECRET or
+# SESSION_SECRET on upgrade, that invalidates every issued token.
+existingSecret: ""
+# Quick starts only: have the chart create that Secret from these values. They
+# end up in Helm's release history, so prefer existingSecret.
+secret:
+  create: false
+  databasePassword: ""
+  jwtSecret: ""
+  sessionSecret: ""
+
+# /app/data holds the local KEK and the license file. Losing the KEK makes every
+# stored secret unrecoverable.
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  accessModes: [ReadWriteOnce]
+  existingClaim: ""
+  # Keep the claim (and the KEK) when the release is uninstalled.
+  keepOnUninstall: true
+
+migrate:
+  # Run the migration Job as a pre-install and pre-upgrade hook, so helm
+  # upgrade migrates before the new pods start and a failed migration fails
+  # the upgrade. false renders a plain Job (the kubernetes/ manifests).
+  hook: true
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+# Example for the ingress-nginx controller; other controllers need their own
+# WebSocket and timeout settings.
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+  hosts:
+    - host: corelink.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Extra container environment (list of name/value or valueFrom entries).
+extraEnv: []

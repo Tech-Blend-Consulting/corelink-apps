@@ -1,0 +1,16 @@
+apiVersion: v2
+name: corelink
+description: CoreLink secrets management, self-hosted, against your own PostgreSQL.
+type: application
+# The release pipeline packages the chart with --version and --app-version set
+# to the release, so the chart version and the image tag move together. These
+# are the development placeholders.
+version: 0.0.0-dev
+appVersion: "0.0.0-dev"
+kubeVersion: ">=1.25.0-0"
+home: https://usecorelink.com
+# helm push turns sources into org.opencontainers.image.source, which links the
+# ghcr package to this repository (as the image label does for the images), so
+# the release workflow's own token can push and prune it.
+sources:
+  - https://github.com/Tech-Blend-Consulting/corelink-apps
