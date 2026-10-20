@@ -71,6 +71,9 @@ WORKDIR /app
 COPY --from=fetch --chown=secrets:secrets /app /app
 COPY --from=fetch /migrations /migrations
 
+# On PATH so `docker compose exec tbcl-server tbcl-server setup-link` resolves.
+RUN ln -s /app/tbcl-server /usr/local/bin/tbcl-server
+
 USER secrets:secrets
 
 EXPOSE 8080
