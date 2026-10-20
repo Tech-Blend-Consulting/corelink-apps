@@ -60,3 +60,4 @@ jobs:
           tags: |
             ghcr.io/tech-blend-consulting/corelink-connector:${{ steps.release.outputs.version }}
             ghcr.io/tech-blend-consulting/corelink-connector:latest
+            ghcr.io/tech-blend-consulting/corelink-connector:stable

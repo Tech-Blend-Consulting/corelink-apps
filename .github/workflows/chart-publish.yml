@@ -12,8 +12,8 @@
 # explicit --version, and an alias would move when an older release is
 # republished.
 #
-# Retention: the newest three releases are kept, like the images. The last step
-# deletes older chart versions and their signatures from the package.
+# Retention: a chart version is kept for six months and never fewer than the
+# newest six. The last step deletes versions past both, with their signatures.
 #
 # Runs on a tag, or by hand for a release that was tagged before this existed.
 name: chart
@@ -37,7 +37,8 @@ permissions:
 env:
   CHART_REPO: ghcr.io/tech-blend-consulting/charts
   CHART_PACKAGE: charts/corelink
-  KEEP_RELEASES: 3
+  KEEP_STABLE_MONTHS: 6
+  KEEP_STABLE_MIN: 6
 
 jobs:
   publish:
@@ -99,9 +100,12 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: cosign sign --yes "${CHART_REPO}/corelink@${DIGEST}"
 
-      # Keep the newest KEEP_RELEASES releases. A version is a package version
-      # tagged x.y.z; its signature is the version tagged sha256-<digest>.sig,
-      # which goes with it.
+      # Every chart version is a stable release (the chart/ tag is pushed only by
+      # the stable cut), so retention follows the stable rule: a version is
+      # deleted only when it is older than KEEP_STABLE_MONTHS months AND not among
+      # the newest KEEP_STABLE_MIN. A version is a package version tagged x.y.z;
+      # its signature is the version tagged sha256-<digest>.sig, which goes with
+      # it.
       #
       # Only on a tag: republishing an older release by hand would otherwise
       # prune the version it just signed.
@@ -113,13 +117,15 @@ jobs:
         run: |
           encoded="${CHART_PACKAGE//\//%2F}"
           gh api --paginate "/orgs/${OWNER}/packages/container/${encoded}/versions?per_page=100" | jq -s 'add // []' > versions.json
-          jq -r --argjson keep "$KEEP_RELEASES" '
+          jq -r --argjson keep "$KEEP_STABLE_MIN" --argjson months "$KEEP_STABLE_MONTHS" '
             def release: .metadata.container.tags | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) | .[0];
-            . as $all
+            (now - ($months * 2629800)) as $cutoff
+            | . as $all
             | [ .[] | select(release != null) ]
             | sort_by(release | split(".") | map(tonumber))
             | reverse
             | .[$keep:]
+            | map(select((.created_at | fromdateiso8601) < $cutoff))
             | map(
                 . as $v
                 | $v.id,

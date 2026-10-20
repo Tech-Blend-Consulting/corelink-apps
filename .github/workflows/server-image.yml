@@ -63,6 +63,7 @@ jobs:
           tags: |
             ghcr.io/tech-blend-consulting/corelink-server:${{ steps.release.outputs.version }}
             ghcr.io/tech-blend-consulting/corelink-server:latest
+            ghcr.io/tech-blend-consulting/corelink-server:stable
 
       - name: Sign the image digest
         env:

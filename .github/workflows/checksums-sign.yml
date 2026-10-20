@@ -1,0 +1,95 @@
+# Sign a release's checksums file with keyless cosign.
+#
+# The self-hosted installer checks the bundle against
+# corelink-v<version>-checksums.txt, which is served from the same host as the
+# bundle. A host that served a tampered bundle could serve a matching checksum
+# file. This workflow signs the checksums file with the workflow's OIDC identity
+# and attaches the signature and certificate to a GitHub Release of this
+# repository, a place the download host cannot write to. The installer fetches
+# them from there and verifies them when cosign is installed.
+#
+# It signs whatever the download host serves when it runs, so the tag that
+# triggers it (checksums/v<version>, pushed by the mirror script) comes after
+# the release is published; the fetch retries for a while in case the files
+# are still landing.
+#
+# Runs on a tag, or by hand for a release that was tagged before this existed.
+name: checksums
+
+on:
+  push:
+    tags:
+      - 'checksums/v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'CoreLink release whose checksums to sign, e.g. 1.28.3'
+        required: true
+
+permissions:
+  # The release that carries the signature is created with the workflow's token.
+  contents: write
+  # Keyless cosign signs with the workflow's OIDC identity: no key to hold.
+  id-token: write
+
+env:
+  DOWNLOADS_URL: https://usecorelink.com/static/downloads
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Work out which release to sign
+        id: release
+        env:
+          # Passed through env, never interpolated into the script.
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
+          else
+            # refs/tags/checksums/v1.28.3 -> 1.28.3
+            version="${GITHUB_REF_NAME#checksums/v}"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "release version must be x.y.z"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Fetch the checksums file
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          url="${DOWNLOADS_URL}/v${VERSION}/corelink-v${VERSION}-checksums.txt"
+          curl -fsSL --retry 10 --retry-delay 30 --retry-all-errors -o "corelink-v${VERSION}-checksums.txt" "$url"
+          test -s "corelink-v${VERSION}-checksums.txt"
+
+      - name: Sign
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          cosign sign-blob --yes \
+            --output-signature "corelink-v${VERSION}-checksums.txt.sig" \
+            --output-certificate "corelink-v${VERSION}-checksums.txt.pem" \
+            "corelink-v${VERSION}-checksums.txt"
+
+      # The release is named for the tag the installer looks under, so a manual
+      # dispatch publishes to the same place. --clobber replaces a signature
+      # from an earlier run of the same release.
+      - name: Publish the signature
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          tag="checksums/v${VERSION}"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Checksums signature v${VERSION}" \
+              --notes "Keyless cosign signature of corelink-v${VERSION}-checksums.txt."
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber \
+            "corelink-v${VERSION}-checksums.txt.sig" \
+            "corelink-v${VERSION}-checksums.txt.pem"
