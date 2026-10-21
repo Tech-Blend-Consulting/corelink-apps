@@ -85,6 +85,14 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
+      # cosign reads Docker credentials, not helm's registry login, so it needs
+      # its own login to push the signature to ghcr.io.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push
         id: push
         env:
