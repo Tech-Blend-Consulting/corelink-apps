@@ -14,7 +14,7 @@
 #
 #   docker buildx build --platform linux/arm64 --build-arg VERSION=1.28.2 .
 
-FROM alpine:3.20 AS fetch
+FROM alpine:3.24.3 AS fetch
 
 ARG VERSION
 ARG TARGETARCH
@@ -37,7 +37,7 @@ RUN case "$(uname -m)" in x86_64) want=3e ;; aarch64) want=b7 ;; \
  && got=$(od -An -tx1 -j18 -N1 /usr/local/bin/corelink-transit-agent | tr -d ' ') \
  && if [ "$got" != "$want" ]; then echo "/usr/local/bin/corelink-transit-agent is not $(uname -m) (ELF machine $got, TARGETARCH $TARGETARCH)" >&2; exit 1; fi
 
-FROM alpine:3.20
+FROM alpine:3.24.3
 
 # image.source is what a registry and a tooling chain read to get from an image
 # back to the repository it was built from; without it this image described
@@ -47,8 +47,11 @@ FROM alpine:3.20
 LABEL org.opencontainers.image.source="https://github.com/Tech-Blend-Consulting/corelink-apps" \
       org.opencontainers.image.description="CoreLink connector: serves envelopes it holds no key to open"
 
-# ca-certificates so the connector can verify the platform's TLS.
-RUN apk add --no-cache ca-certificates \
+# apk upgrade first, so a rebuild takes the base image's security fixes (musl,
+# musl-utils) that landed after the alpine tag was cut. ca-certificates so the
+# connector can verify the platform's TLS.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache ca-certificates \
  && adduser -D -u 10001 corelink
 
 COPY --from=fetch /usr/local/bin/corelink-transit-agent /usr/local/bin/corelink-transit-agent

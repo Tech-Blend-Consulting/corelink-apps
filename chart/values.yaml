@@ -183,8 +183,9 @@ pgbouncer:
   extraEnv: []
 
 # local keeps the KEK on the /app/data volume: back it up. Use aws, azure or
-# gcp to keep the key off the disk (add the provider's variables to
-# config.extra and its credentials to extraEnv).
+# gcp to keep the key off the disk. gcp takes kms.gcp.* below (KMS_GCP_* in
+# config.extra or extraEnv also works); for aws and azure add the provider's
+# variables to config.extra and its credentials to extraEnv.
 kms:
   provider: local
   # provider: gcp uses Cloud KMS with the pod's own identity (Workload Identity):

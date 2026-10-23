@@ -1,6 +1,6 @@
 {
   "name": "@techblend/transit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Transit API client for Tech Blend Secrets Management",
   "main": "index.js",
   "types": "index.d.ts",
@@ -14,7 +14,7 @@
     "test": "node --test test/*.test.js"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=22"
   },
   "license": "UNLICENSED",
   "homepage": "https://github.com/techblend/secrets-mgmt",

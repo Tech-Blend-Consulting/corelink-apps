@@ -131,14 +131,17 @@ KMS_PROVIDER: {{ .Values.kms.provider | quote }}
 KMS_LOCAL_KEK_FILE: /app/data/kek.key
 {{- end }}
 {{- if eq .Values.kms.provider "gcp" }}
-{{- if not .Values.kms.gcp.project }}{{ fail "kms.gcp.project must be set when kms.provider=gcp" }}{{ end }}
-{{- if not .Values.kms.gcp.location }}{{ fail "kms.gcp.location must be set when kms.provider=gcp" }}{{ end }}
-{{- if not .Values.kms.gcp.keyRing }}{{ fail "kms.gcp.keyRing must be set when kms.provider=gcp" }}{{ end }}
-{{- if not .Values.kms.gcp.keyName }}{{ fail "kms.gcp.keyName must be set when kms.provider=gcp" }}{{ end }}
-KMS_GCP_PROJECT: {{ .Values.kms.gcp.project | quote }}
-KMS_GCP_LOCATION: {{ .Values.kms.gcp.location | quote }}
-KMS_GCP_KEYRING: {{ .Values.kms.gcp.keyRing | quote }}
-KMS_GCP_KEYNAME: {{ .Values.kms.gcp.keyName | quote }}
+{{- /* KMS_GCP_* may also come from config.extra or extraEnv (how earlier charts took them): then kms.gcp.* is optional and a config.extra key is not emitted twice. */ -}}
+{{- $gcpEnv := dict }}
+{{- range .Values.extraEnv }}{{ $_ := set $gcpEnv .name true }}{{ end }}
+{{- range $field := list (list "project" "KMS_GCP_PROJECT") (list "location" "KMS_GCP_LOCATION") (list "keyRing" "KMS_GCP_KEYRING") (list "keyName" "KMS_GCP_KEYNAME") }}
+{{- $val := index $.Values.kms.gcp (index $field 0) }}
+{{- $key := index $field 1 }}
+{{- if and (not $val) (not (hasKey $.Values.config.extra $key)) (not (hasKey $gcpEnv $key)) }}{{ fail (printf "kms.gcp.%s must be set when kms.provider=gcp" (index $field 0)) }}{{ end }}
+{{- if and $val (not (hasKey $.Values.config.extra $key)) }}
+{{ $key }}: {{ $val | quote }}
+{{- end }}
+{{- end }}
 {{- end }}
 RATELIMIT_ENABLED: "true"
 {{- if and .Values.autoscaling.requestsPerSecond.enabled (not (hasKey .Values.config.extra "METRICS_BIND")) }}

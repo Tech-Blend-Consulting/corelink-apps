@@ -34,6 +34,8 @@ npm install github:Tech-Blend-Consulting/corelink-apps#main --prefix-path node
 bundle add corelink --git https://github.com/Tech-Blend-Consulting/corelink-apps --glob ruby/*.gemspec
 ```
 
+The Node SDK requires Node.js 22 or later.
+
 **Java and .NET** — copy the source in. Both are deliberately dependency-free:
 the Java SDK is a handful of files with no build system, and the .NET SDK is two
 files plus a project that exists only to run its tests.
@@ -48,7 +50,7 @@ read it.
 For Kubernetes the image is published and pulls anonymously:
 
 ```
-ghcr.io/tech-blend-consulting/corelink-connector:1.28.72
+ghcr.io/tech-blend-consulting/corelink-connector:1.28.81
 ```
 
 For a host, download the binary from the registry. To host the image yourself,
@@ -56,7 +58,7 @@ For a host, download the binary from the registry. To host the image yourself,
 
 ```bash
 cd connector
-docker build --build-arg VERSION=1.28.72 -t corelink-connector:1.28.72 .
+docker build --build-arg VERSION=1.28.81 -t corelink-connector:1.28.81 .
 ```
 
 The binary itself is published per platform at

@@ -16,7 +16,7 @@
 #
 #   docker buildx build --platform linux/arm64 --build-arg VERSION=1.28.3 .
 
-FROM alpine:3.23 AS fetch
+FROM alpine:3.24.3 AS fetch
 
 ARG VERSION
 ARG TARGETARCH
@@ -51,7 +51,7 @@ RUN case "$(uname -m)" in x86_64) want=3e ;; aarch64) want=b7 ;; \
  && got=$(od -An -tx1 -j18 -N1 /app/tbcl-server | tr -d ' ') \
  && if [ "$got" != "$want" ]; then echo "/app/tbcl-server is not $(uname -m) (ELF machine $got, TARGETARCH $TARGETARCH)" >&2; exit 1; fi
 
-FROM alpine:3.23
+FROM alpine:3.24.3
 
 ARG VERSION=dev
 
@@ -60,7 +60,11 @@ LABEL org.opencontainers.image.title="CoreLink server" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.source="https://github.com/Tech-Blend-Consulting/corelink-apps"
 
-RUN apk add --no-cache ca-certificates tzdata wget \
+# apk upgrade takes the newest musl, musl-utils and zlib in the 3.24 repository
+# even when the base image tag was built before a fix (a rebuild otherwise keeps
+# the base image's copies).
+RUN apk upgrade --no-cache \
+ && apk add --no-cache ca-certificates tzdata wget \
  && addgroup -g 1000 secrets \
  && adduser -u 1000 -G secrets -s /sbin/nologin -D secrets
 
