@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "techblend-transit"
 version = "0.1.0"
 description = "Transit API client for Tech Blend Secrets Management"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 dependencies = [
     "requests>=2.20",
     # AES-256-GCM, to open a sealed envelope. Python has no AEAD in the standard

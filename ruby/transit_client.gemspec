@@ -11,12 +11,13 @@ Gem::Specification.new do |spec|
   spec.authors     = ['Tech Blend']
   spec.license     = 'Nonstandard'
 
-  # 3.1 because opening a sealed envelope needs an openssl that can set
-  # additional authenticated data. The openssl gem shipped with macOS system
-  # Ruby 2.6 (2.1.2, against LibreSSL) cannot: auth_data= raises whatever order
-  # it is called in, and auth_tag_len= segfaults. There is no fallback, since a
-  # secret cannot be opened without its AAD.
-  spec.required_ruby_version = '>= 3.1'
+  # Opening a sealed envelope needs an openssl that can set additional
+  # authenticated data. The openssl gem shipped with macOS system Ruby 2.6
+  # (2.1.2, against LibreSSL) cannot: auth_data= raises whatever order it is
+  # called in, and auth_tag_len= segfaults. There is no fallback, since a secret
+  # cannot be opened without its AAD. The floor is the oldest Ruby branch still
+  # receiving security fixes (ruby-lang.org/en/downloads/branches/).
+  spec.required_ruby_version = '>= 3.3'
   spec.files = Dir['lib/**/*.rb'] + ['README.md']
   spec.require_paths = ['lib']
 

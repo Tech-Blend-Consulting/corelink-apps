@@ -3,6 +3,9 @@
 Transit API client for Tech Blend CoreLink. Standard library only -- no runtime
 dependencies in the credential path.
 
+Requires Ruby 3.3 or newer. Older Rubies are end of life and the gem will not
+install on them.
+
 ```ruby
 require 'transit_client'
 

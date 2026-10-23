@@ -12,7 +12,7 @@
 # catch it is comparing the name CoreLink says the id belongs to against the name
 # the application asked for.
 #
-# Needs Ruby >= 3.1: macOS system Ruby links LibreSSL, where setting an AEAD auth
+# Needs Ruby >= 3.3: macOS system Ruby links LibreSSL, where setting an AEAD auth
 # tag segfaults.
 #
 # Run: ruby -Isdk/ruby/lib sdk/ruby/test/substitution_test.rb
