@@ -1,0 +1,130 @@
+{{- if .Values.pgbouncer.enabled }}
+{{- if not .Values.pgbouncer.tls.secretName }}
+{{- fail "pgbouncer.enabled needs pgbouncer.tls.secretName: the server refuses a database connection without TLS in production, so PgBouncer must serve TLS (a kubernetes.io/tls Secret)" }}
+{{- end }}
+# PgBouncer in SESSION pool mode. CoreLink takes session-level advisory locks
+# (scheduler lease, rotation claims, migrations); session mode keeps each one on
+# a server connection that stays with its client. Transaction mode would break
+# them, so this chart never uses it. Session mode does not multiplex: it caps
+# and queues connections, so the pool size below is the most the servers can
+# open to PostgreSQL between them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "corelink.pgbouncerName" . }}
+  labels:
+    {{- include "corelink.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "corelink.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pgbouncer
+  template:
+    metadata:
+      labels:
+        {{- include "corelink.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: pgbouncer
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: pgbouncer
+          image: {{ printf "%s:%s" .Values.pgbouncer.image.repository .Values.pgbouncer.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: pg
+              containerPort: 5432
+          env:
+            - name: DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "corelink.secretName" . }}
+                  key: DATABASE_PASSWORD
+            - name: POOL_MODE
+              value: session
+            # These names are read by the image's entrypoint.sh, which writes
+            # each one to pgbouncer.ini only when set (edoburu/docker-pgbouncer,
+            # entrypoint.sh); AUTH_TYPE defaults to md5 there, so set it.
+            - name: AUTH_TYPE
+              value: {{ .Values.pgbouncer.authType | quote }}
+            - name: DEFAULT_POOL_SIZE
+              value: {{ include "corelink.pgbouncerPoolSize" . | quote }}
+            - name: MAX_DB_CONNECTIONS
+              value: {{ include "corelink.pgbouncerPoolSize" . | quote }}
+            - name: MAX_CLIENT_CONN
+              value: {{ add (int (include "corelink.pgbouncerPoolSize" .)) (int .Values.pgbouncer.clientHeadroom) | quote }}
+            - name: SERVER_TLS_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: CLIENT_TLS_SSLMODE
+              value: require
+            - name: CLIENT_TLS_CERT_FILE
+              value: /etc/pgbouncer/tls/tls.crt
+            - name: CLIENT_TLS_KEY_FILE
+              value: /etc/pgbouncer/tls/tls.key
+            {{- with .Values.pgbouncer.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: pg
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: pg
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          {{- with .Values.pgbouncer.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/pgbouncer/tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.pgbouncer.tls.secretName }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "corelink.pgbouncerName" . }}
+  labels:
+    {{- include "corelink.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "corelink.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: pg
+{{- end }}

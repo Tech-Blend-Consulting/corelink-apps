@@ -17,11 +17,57 @@
       }
     },
     "imagePullSecrets": {"type": "array"},
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {"type": "boolean"},
+        "name": {"type": "string"},
+        "annotations": {"type": "object"}
+      }
+    },
     "replicaCount": {"type": "integer", "minimum": 1},
     "strategy": {
       "type": "object",
       "properties": {"type": {"type": "string", "enum": ["Recreate", "RollingUpdate"]}}
     },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "minReplicas": {"type": "integer", "minimum": 1},
+        "maxReplicas": {"type": "integer", "minimum": 1},
+        "targetCPUUtilizationPercentage": {"type": "integer", "minimum": 1, "maximum": 100},
+        "requestsPerSecond": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "metricName": {"type": "string", "minLength": 1},
+            "targetPerPod": {"type": "string", "minLength": 1}
+          }
+        },
+        "behavior": {"type": "object"}
+      }
+    },
+    "pdb": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "maxUnavailable": {"type": "integer", "minimum": 1}
+      }
+    },
+    "topologySpread": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "constraints": {"type": "array"}
+      }
+    },
+    "terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
     "resources": {"type": "object"},
     "podAnnotations": {"type": "object"},
     "podLabels": {"type": "object"},
@@ -65,9 +111,43 @@
         "connMaxLifetime": {"type": "string"}
       }
     },
+    "pgbouncer": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string", "minLength": 1},
+            "tag": {"type": "string", "minLength": 1}
+          }
+        },
+        "poolSize": {"type": "integer", "minimum": 0},
+        "clientHeadroom": {"type": "integer", "minimum": 0},
+        "authType": {"type": "string", "enum": ["scram-sha-256", "md5", "plain"]},
+        "tls": {
+          "type": "object",
+          "properties": {"secretName": {"type": "string"}}
+        },
+        "resources": {"type": "object"},
+        "extraEnv": {"type": "array"}
+      }
+    },
     "kms": {
       "type": "object",
-      "properties": {"provider": {"type": "string", "enum": ["local", "aws", "azure", "gcp"]}}
+      "properties": {
+        "provider": {"type": "string", "enum": ["local", "aws", "azure", "gcp"]},
+        "gcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "project": {"type": "string"},
+            "location": {"type": "string"},
+            "keyRing": {"type": "string"},
+            "keyName": {"type": "string"}
+          }
+        }
+      }
     },
     "license": {
       "type": "object",

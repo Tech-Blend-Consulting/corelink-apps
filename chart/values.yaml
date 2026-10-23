@@ -18,11 +18,66 @@ image:
 imagePullSecrets: []
 
 replicaCount: 1
-# The data volume is ReadWriteOnce by default: stop the old pod before starting
-# the new one. Use RollingUpdate with several replicas, a ReadWriteMany volume
-# or a cloud KMS.
-strategy:
-  type: Recreate
+# More than one replica (replicaCount > 1 or autoscaling.enabled) needs a
+# ReadWriteMany data volume (persistence.accessModes), or a cloud KMS with
+# persistence.enabled=false and license.existingSecret; the chart refuses
+# anything else. See the README, "Scaling".
+#
+# Left empty, the update strategy is Recreate for one replica (the ReadWriteOnce
+# volume must be released first) and RollingUpdate with maxUnavailable 0 and
+# maxSurge 1 for several. Set it to override.
+strategy: {}
+
+# Horizontal Pod Autoscaler on CPU. While enabled, replicaCount is ignored and
+# the Deployment leaves the replica count to the autoscaler. Needs
+# resources.requests.cpu.
+autoscaling:
+  enabled: false
+  minReplicas: 3
+  # Set this to what your database connection budget allows:
+  # maxReplicas x database.maxOpenConns.
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  # Also scale on requests per second per pod, as a Pods metric. Needs a
+  # Prometheus adapter or KEDA on the cluster that serves metricName (a rate of
+  # corelink_http_requests_total). Enabling it sets METRICS_BIND to
+  # 0.0.0.0:9090 on the pods (unless config.extra.METRICS_BIND is set) and
+  # declares a "metrics" container port; Prometheus must scrape that port.
+  requestsPerSecond:
+    enabled: false
+    metricName: corelink_http_requests_per_second
+    # Average requests per second per pod (a Kubernetes quantity, e.g. "50").
+    targetPerPod: "50"
+  # Optional autoscaling/v2 behavior (scaleUp, scaleDown policies).
+  behavior: {}
+
+# Allow one pod down at a time during node drains. Rendered only for more than
+# one replica; a budget on a single pod would block every drain.
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
+# Spread the pods over zones and nodes (rendered only for more than one
+# replica). ScheduleAnyway keeps small and single-zone clusters schedulable.
+# constraints replaces the default pair when set.
+topologySpread:
+  enabled: true
+  constraints: []
+
+# How long Kubernetes waits after SIGTERM before killing the pod. Live SSH and
+# database sessions continue for SESSION_DRAIN_TIMEOUT (default 15 minutes, 900 s)
+# once the pod is removed; keep this at that timeout plus 30 s.
+terminationGracePeriodSeconds: 930
+
+# ServiceAccount for the server pods. Create one to carry the workload-identity
+# annotation a cloud KMS needs (eks.amazonaws.com/role-arn,
+# azure.workload.identity/client-id, iam.gke.io/gcp-service-account), or name an
+# existing one. Left as is, the pods use the namespace's default account.
+serviceAccount:
+  create: false
+  # Defaults to the release's full name when create is true.
+  name: ""
+  annotations: {}
 
 resources: {}
 podAnnotations: {}
@@ -102,11 +157,44 @@ database:
   maxIdleConns: 5
   connMaxLifetime: 5m
 
+# Optional PgBouncer in front of PostgreSQL, in SESSION pool mode (the only mode
+# safe for CoreLink's session-level advisory locks). It caps and queues
+# connections; it does not multiplex. The pool defaults to replicaCount x
+# database.maxOpenConns: lower database.maxOpenConns or set poolSize so that
+# the total stays within the database's max_connections minus headroom for the
+# migration Job and admin sessions (docs/admin-guide.md, "Database connections
+# at many servers"). Needs a kubernetes.io/tls Secret for the client side.
+pgbouncer:
+  enabled: false
+  image:
+    repository: edoburu/pgbouncer
+    tag: v1.25.2-p0
+  # Server connections to PostgreSQL. 0 = replicaCount x database.maxOpenConns.
+  poolSize: 0
+  # Client connections accepted beyond the pool (migration Job, queued clients).
+  clientHeadroom: 10
+  # How PgBouncer authenticates to PostgreSQL and its clients (the image
+  # defaults to md5, which a SCRAM-only database refuses).
+  authType: scram-sha-256
+  tls:
+    secretName: ""
+  resources: {}
+  # Further container environment for the image, as name/value entries.
+  extraEnv: []
+
 # local keeps the KEK on the /app/data volume: back it up. Use aws, azure or
 # gcp to keep the key off the disk (add the provider's variables to
 # config.extra and its credentials to extraEnv).
 kms:
   provider: local
+  # provider: gcp uses Cloud KMS with the pod's own identity (Workload Identity):
+  # annotate serviceAccount with the Google service account, which needs
+  # roles/cloudkms.cryptoKeyEncrypterDecrypter on the key. No key file is read.
+  gcp:
+    project: ""
+    location: ""
+    keyRing: ""
+    keyName: ""
 
 # With persistence off and a cloud KMS, supply the license as content from a
 # Secret: it becomes CORELINK_LICENSE.

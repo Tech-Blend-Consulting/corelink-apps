@@ -50,7 +50,16 @@ spec:
             - name: MIGRATION_COMMAND
               value: up
             {{- if .Values.migrate.hook }}
-            {{- range $k, $v := (include "corelink.config" . | fromYaml) }}
+            {{- /* The PgBouncer Service is not a hook, so it does not exist
+                 yet on the first install; migrate (which holds a session
+                 lock) goes straight to the database. */}}
+            {{- $cfg := include "corelink.config" . | fromYaml }}
+            {{- if .Values.pgbouncer.enabled }}
+            {{- $_ := set $cfg "DATABASE_HOST" .Values.database.host }}
+            {{- $_ := set $cfg "DATABASE_PORT" (toString .Values.database.port) }}
+            {{- $_ := unset $cfg "DATABASE_POOL_MODE" }}
+            {{- end }}
+            {{- range $k, $v := $cfg }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}

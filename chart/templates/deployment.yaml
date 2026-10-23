@@ -1,10 +1,26 @@
 {{- if and .Values.license.existingSecret .Values.persistence.enabled }}
 {{- fail "license.existingSecret supplies CORELINK_LICENSE and needs persistence.enabled=false: the server refuses to start with both the file and the content" }}
 {{- end }}
+{{- if include "corelink.scaled" . }}
+{{- $rwx := has "ReadWriteMany" .Values.persistence.accessModes }}
+{{- $cloudKMS := and (has .Values.kms.provider (list "aws" "azure" "gcp")) (not .Values.persistence.enabled) .Values.license.existingSecret }}
+{{- if not (or $rwx $cloudKMS) }}
+{{- fail "more than one replica (replicaCount > 1 or autoscaling.enabled) cannot share a ReadWriteOnce data volume or a local key file: either set persistence.accessModes to [ReadWriteMany] (also when persistence.existingClaim is a ReadWriteMany claim), or set kms.provider to aws, azure or gcp together with persistence.enabled=false and license.existingSecret" }}
+{{- end }}
+{{- end }}
+{{- if .Values.autoscaling.enabled }}
+{{- if not (dig "requests" "cpu" "" (.Values.resources | default dict)) }}
+{{- fail "autoscaling.enabled needs resources.requests.cpu: the CPU target is a percentage of the request" }}
+{{- end }}
+{{- if lt (int .Values.autoscaling.maxReplicas) (int .Values.autoscaling.minReplicas) }}
+{{- fail "autoscaling.maxReplicas must be at least autoscaling.minReplicas" }}
+{{- end }}
+{{- end }}
 # One replica keeps the KEK volume (ReadWriteOnce) simple. More replicas behind
-# the Service are safe (the scheduler lock lets one run the schedulers) but need
-# a ReadWriteMany volume for /app/data, or a cloud KMS and a license that every
-# replica can read.
+# the Service (replicaCount > 1 or autoscaling.enabled) are safe (the scheduler
+# lock lets one run the schedulers) but need a ReadWriteMany volume for
+# /app/data, or a cloud KMS and a license that every replica can read; the
+# chart refuses anything else.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,9 +28,20 @@ metadata:
   labels:
     {{- include "corelink.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   strategy:
+    {{- if .Values.strategy }}
     {{- toYaml .Values.strategy | nindent 4 }}
+    {{- else if include "corelink.scaled" . }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+    {{- else }}
+    type: Recreate
+    {{- end }}
   selector:
     matchLabels:
       {{- include "corelink.selectorLabels" . | nindent 6 }}
@@ -37,6 +64,10 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with (include "corelink.serviceAccountName" .) }}
+      serviceAccountName: {{ . }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -50,6 +81,10 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            {{- if .Values.autoscaling.requestsPerSecond.enabled }}
+            - name: metrics
+              containerPort: 9090
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "corelink.fullname" . }}-config
@@ -118,4 +153,20 @@ spec:
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if and (include "corelink.scaled" .) .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        {{- if .Values.topologySpread.constraints }}
+        {{- toYaml .Values.topologySpread.constraints | nindent 8 }}
+        {{- else }}
+        {{- range $key := list "topology.kubernetes.io/zone" "kubernetes.io/hostname" }}
+        - maxSkew: 1
+          topologyKey: {{ $key }}
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "corelink.selectorLabels" $ | nindent 14 }}
+              app.kubernetes.io/component: server
+        {{- end }}
+        {{- end }}
       {{- end }}

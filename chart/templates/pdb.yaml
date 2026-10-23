@@ -1,0 +1,14 @@
+{{- if and .Values.pdb.enabled (include "corelink.scaled" .) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "corelink.fullname" . }}
+  labels:
+    {{- include "corelink.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "corelink.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+{{- end }}
