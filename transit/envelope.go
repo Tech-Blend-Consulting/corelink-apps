@@ -38,6 +38,92 @@ import (
 // says so.
 var ErrStaleEnvelope = errors.New("the envelope held by the connector is not the current one")
 
+// ErrSecretWithheld is a secret CoreLink has stopped delivering: an operator
+// disabled it, locked the database connection it belongs to, or suspended the
+// identity asking for it (see ErrIdentityRefused). Neither the connector nor
+// CoreLink delivers it until that is undone, so an application that already
+// has it should stop using it: a Watcher reports it through OnUnavailable.
+var ErrSecretWithheld = errors.New("transit: CoreLink is withholding the secret (disabled, its database connection locked, or this identity suspended)")
+
+// ErrSecretDisabled is ErrSecretWithheld.
+//
+// Deprecated: use ErrSecretWithheld, which also covers a locked connection and
+// a suspended identity.
+var ErrSecretDisabled = ErrSecretWithheld
+
+// ErrIdentityRefused is CoreLink refusing this application's own identity: it
+// was suspended or decommissioned, or no longer verifies. Every secret is
+// withheld while it is, so it is an ErrSecretWithheld; a Watcher withdraws all
+// it has delivered. CoreLink gives the same answer for each cause on purpose.
+var ErrIdentityRefused = fmt.Errorf("%w: CoreLink refused this application's identity", ErrSecretWithheld)
+
+// Reasons a secret is withheld, as WithheldReason reports them.
+const (
+	ReasonSecretDisabled   = "secret_disabled"   // the secret is disabled in CoreLink
+	ReasonConnectionLocked = "connection_locked" // its database connection is locked
+	ReasonIdentityRefused  = "identity_refused"  // this application's identity is suspended or no longer verifies
+	ReasonConnectorRefused = "connector_refused" // the connector's identity is suspended or no longer verifies
+	ReasonWithheld         = "withheld"          // withheld, reason not given (an older connector)
+)
+
+// withheldError is ErrSecretWithheld with its reason.
+type withheldError struct {
+	reason string
+	detail string
+}
+
+func (e *withheldError) Error() string {
+	return ErrSecretWithheld.Error() + ": " + e.reason + ": " + e.detail
+}
+
+func (e *withheldError) Is(target error) bool { return target == ErrSecretWithheld }
+
+// WithheldReason says why err withholds a secret: one of the Reason constants,
+// or "" when err is not ErrSecretWithheld.
+func WithheldReason(err error) string {
+	if errors.Is(err, ErrIdentityRefused) {
+		return ReasonIdentityRefused
+	}
+	var w *withheldError
+	if errors.As(err, &w) {
+		return w.reason
+	}
+	if errors.Is(err, ErrSecretWithheld) {
+		return ReasonWithheld
+	}
+	return ""
+}
+
+// withheldReasonOf reads a 409 withholding a secret: the connector's code, or
+// CoreLink's SECRET_DISABLED or DB_CONNECTION_LOCKED. "" when the response is
+// not one.
+func withheldReasonOf(status int, body []byte, fromCoreLink bool) string {
+	if status != http.StatusConflict {
+		return ""
+	}
+	var e struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(body, &e)
+	switch e.Error.Code {
+	case "SECRET_DISABLED":
+		return ReasonSecretDisabled
+	case "DB_CONNECTION_LOCKED":
+		return ReasonConnectionLocked
+	case "CONNECTOR_IDENTITY_REFUSED":
+		if !fromCoreLink {
+			return ReasonConnectorRefused
+		}
+	}
+	if !fromCoreLink {
+		// A connector answers 409 only to withhold; an older one gives no code.
+		return ReasonWithheld
+	}
+	return ""
+}
+
 // ErrEnvelopeCorrupt is an envelope that did not open and was not stale.
 //
 // The key belonged to the version the envelope claims, and it still failed, so
@@ -183,6 +269,9 @@ func (c *Client) fetchEnvelope(name string, refresh bool) (*sealedEnvelope, erro
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if reason := withheldReasonOf(resp.StatusCode, body, false); reason != "" {
+			return nil, &withheldError{reason: reason, detail: fmt.Sprintf("the connector withholds %q", name)}
+		}
 		return nil, fmt.Errorf("transit: the connector has no envelope for %q (status %d: %s)",
 			name, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
@@ -197,33 +286,59 @@ func (c *Client) fetchEnvelope(name string, refresh bool) (*sealedEnvelope, erro
 	return &sealed, nil
 }
 
+// postUnwrap sends one unwrap request under the current session.
+func (c *Client) postUnwrap(secretID string) (*http.Response, error) {
+	endpoint := c.platformURL + "/api/v1/nhi-agent/secrets/" + url.PathEscape(secretID) + "/unwrap"
+	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("transit: building the unwrap request: %w", err)
+	}
+	c.sessionMu.Lock()
+	session := c.sessionID
+	c.sessionMu.Unlock()
+	if session == "" {
+		return nil, fmt.Errorf("transit: no CoreLink session; call Bootstrap first")
+	}
+	req.Header.Set("X-NHI-Session", session)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("transit: reaching CoreLink to unwrap: %w", err)
+	}
+	return resp, nil
+}
+
 // unwrapDEK asks CoreLink for the key to one secret.
 //
 // CoreLink unwraps its own copy, so nothing this process holds takes part: an
 // application handed somebody else's ciphertext cannot have it opened by naming
 // a secret it is entitled to.
 func (c *Client) unwrapDEK(secretID string) (dek []byte, version int, name string, err error) {
-	endpoint := c.platformURL + "/api/v1/nhi-agent/secrets/" + url.PathEscape(secretID) + "/unwrap"
-	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
+	resp, err := c.postUnwrap(secretID)
 	if err != nil {
-		return nil, 0, "", fmt.Errorf("transit: building the unwrap request: %w", err)
+		return nil, 0, "", err
 	}
-	c.sessionMu.Lock()
-	session := c.sessionID
-	c.sessionMu.Unlock()
-	if session == "" {
-		return nil, 0, "", fmt.Errorf("transit: no CoreLink session; call Bootstrap first")
-	}
-	req.Header.Set("X-NHI-Session", session)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, 0, "", fmt.Errorf("transit: reaching CoreLink to unwrap: %w", err)
+	if resp.StatusCode == http.StatusUnauthorized {
+		// The session is gone. Suspending an identity deletes its sessions, so
+		// connect again: a suspended identity is refused (ErrIdentityRefused),
+		// anything else carries on with a new session.
+		resp.Body.Close()
+		if c.recentlyRefused() {
+			return nil, 0, "", fmt.Errorf("transit: session expired: %w", ErrIdentityRefused)
+		}
+		if err := c.nhiConnect(); err != nil {
+			return nil, 0, "", fmt.Errorf("transit: session expired and reconnect failed: %w", err)
+		}
+		if resp, err = c.postUnwrap(secretID); err != nil {
+			return nil, 0, "", err
+		}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if reason := withheldReasonOf(resp.StatusCode, body, true); reason != "" {
+			return nil, 0, "", &withheldError{reason: reason, detail: "CoreLink will not unwrap " + secretID}
+		}
 		return nil, 0, "", fmt.Errorf("transit: CoreLink refused to unwrap (status %d: %s)",
 			resp.StatusCode, strings.TrimSpace(string(body)))
 	}

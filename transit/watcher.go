@@ -1,6 +1,7 @@
 package transit
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
@@ -23,6 +24,10 @@ type Watcher struct {
 	configSeen map[string]bool
 	secretFns  map[string][]func(string) // name -> callbacks; "*" = wildcard
 	configFns  map[string][]func(string)
+	// unavailableFns hear that a secret already delivered was withdrawn.
+	unavailableFns []func(name string, err error)
+	// errorFns hear every failed fetch, for an application showing its status.
+	errorFns []func(name string, err error)
 
 	stopCh chan struct{}
 }
@@ -49,6 +54,40 @@ func (w *Watcher) WatchSecret(name string, fn func(value string)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.secretFns[name] = append(w.secretFns[name], fn)
+}
+
+// OnUnavailable registers fn to be called once when a secret this Watcher has
+// already delivered is withdrawn: it was disabled in CoreLink, its database
+// connection was locked, or this application's identity was suspended
+// (ErrSecretWithheld; ErrIdentityRefused withdraws every secret at once). The
+// application should stop using the value it holds -- close connections opened
+// with it, forget it -- because nothing delivers it again until that is undone.
+// Then the secret's WatchSecret callbacks fire again with its value, as on the
+// first fetch. Safe to call after Start.
+func (w *Watcher) OnUnavailable(fn func(name string, err error)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.unavailableFns = append(w.unavailableFns, fn)
+}
+
+// OnError registers fn to be called with every failed fetch of a watched secret,
+// delivered or not: withheld (see WithheldReason), CoreLink or the connector
+// unreachable, and so on. It is for showing status; OnUnavailable is what says
+// to stop using a value. Safe to call after Start.
+func (w *Watcher) OnError(fn func(name string, err error)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.errorFns = append(w.errorFns, fn)
+}
+
+// reportError tells OnError about a failed fetch.
+func (w *Watcher) reportError(name string, err error) {
+	w.mu.Lock()
+	fns := append([]func(string, error){}, w.errorFns...)
+	w.mu.Unlock()
+	for _, fn := range fns {
+		fn(name, err)
+	}
 }
 
 // WatchConfig registers fn to be called whenever the named config file's
@@ -129,6 +168,16 @@ func (w *Watcher) pollSecrets() {
 		}
 		val, err := w.client.GetSecret(name)
 		if err != nil {
+			w.reportError(name, err)
+			switch {
+			case errors.Is(err, ErrIdentityRefused):
+				// The identity itself is refused: nothing it holds may be used,
+				// and asking again by name this tick changes nothing.
+				w.withdrawAll(err)
+				return
+			case errors.Is(err, ErrSecretWithheld):
+				w.withdraw(name, err)
+			}
 			continue
 		}
 		if w.updateSecret(name, val) {
@@ -188,6 +237,37 @@ func (w *Watcher) updateSecret(name, val string) bool {
 		return true
 	}
 	return false
+}
+
+// withdraw forgets a secret's value and tells OnUnavailable, once, if it had
+// been delivered. Forgetting it is what makes its callbacks fire again when it
+// is enabled.
+func (w *Watcher) withdraw(name string, err error) {
+	w.mu.Lock()
+	had := w.secretSeen[name]
+	delete(w.secretSeen, name)
+	delete(w.secretVals, name)
+	fns := append([]func(string, error){}, w.unavailableFns...)
+	w.mu.Unlock()
+	if !had {
+		return
+	}
+	for _, fn := range fns {
+		fn(name, err)
+	}
+}
+
+// withdrawAll withdraws every secret delivered so far.
+func (w *Watcher) withdrawAll(err error) {
+	w.mu.Lock()
+	names := make([]string, 0, len(w.secretSeen))
+	for name := range w.secretSeen {
+		names = append(names, name)
+	}
+	w.mu.Unlock()
+	for _, name := range names {
+		w.withdraw(name, err)
+	}
 }
 
 // updateConfig is the config-file equivalent of updateSecret.

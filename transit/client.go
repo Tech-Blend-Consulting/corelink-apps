@@ -124,6 +124,10 @@ type Client struct {
 	// direct mode. See direct.go.
 	names     nameIndex
 	sessionID string
+	// refusedAt is when CoreLink last refused this identity; a reconnect is
+	// not attempted again for refusedRetry, since connects are rate limited
+	// per address and the answer will not change that quickly.
+	refusedAt time.Time
 	sessionMu sync.Mutex
 
 	stopCh     chan struct{}
@@ -341,6 +345,12 @@ func (c *Client) nhiConnect() error {
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusForbidden {
+		c.sessionMu.Lock()
+		c.refusedAt = time.Now()
+		c.sessionMu.Unlock()
+		return fmt.Errorf("transit: nhi connect failed: HTTP %d: %w", resp.StatusCode, ErrIdentityRefused)
+	}
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("transit: nhi connect failed: HTTP %d", resp.StatusCode)
 	}
@@ -537,4 +547,46 @@ func (c *Client) authedGet(url string) (*http.Response, error) {
 	req2.Header.Set("X-NHI-Session", c.sessionID)
 	c.sessionMu.Unlock()
 	return c.httpClient.Do(req2)
+}
+
+// refusedRetry is how long a refused identity waits before connecting again.
+const refusedRetry = 30 * time.Second
+
+// recentlyRefused reports whether CoreLink refused this identity within
+// refusedRetry.
+func (c *Client) recentlyRefused() bool {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	return !c.refusedAt.IsZero() && time.Since(c.refusedAt) < refusedRetry
+}
+
+// Identity is what CoreLink says this client's identity is.
+type Identity struct {
+	ID          string `json:"nhi_id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Status      string `json:"status"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
+}
+
+// WhoAmI asks CoreLink which identity this client is connected as. A suspended
+// identity cannot connect, so the answer is ErrIdentityRefused rather than a
+// status of "suspended".
+func (c *Client) WhoAmI() (Identity, error) {
+	if c.platformURL == "" || c.nhiID == "" {
+		return Identity{}, fmt.Errorf("transit: WhoAmI needs an identity; set PlatformURL and NHIID")
+	}
+	resp, err := c.authedGet(c.platformURL + "/api/v1/nhi-agent/whoami")
+	if err != nil {
+		return Identity{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Identity{}, fmt.Errorf("transit: whoami: HTTP %d", resp.StatusCode)
+	}
+	var id Identity
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&id); err != nil {
+		return Identity{}, fmt.Errorf("transit: decode whoami: %w", err)
+	}
+	return id, nil
 }

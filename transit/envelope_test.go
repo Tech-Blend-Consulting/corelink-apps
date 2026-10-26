@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -69,6 +70,19 @@ type fakePlatform struct {
 	// listing is what the secrets listing returns, for resolution.
 	listing []map[string]string
 	unwraps int
+	// disabled answers unwrap with 409 SECRET_DISABLED, as CoreLink does for a
+	// secret an operator has disabled; lockCode replaces the code.
+	disabled bool
+	lockCode string
+	// suspended stands for the identity being suspended: its session is
+	// deleted, so unwrap answers 401 for any session but a new one, and connect
+	// is refused with 403 until it is cleared.
+	suspended  bool
+	newSession string
+	connects   int
+	// sessionGone is set once suspended: the session in place was deleted, and
+	// only a new one from a later connect is accepted, as in CoreLink.
+	sessionGone bool
 }
 
 func (f *fakePlatform) handler() http.Handler {
@@ -81,11 +95,36 @@ func (f *fakePlatform) handler() http.Handler {
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": rows})
 			return
 		}
+		if r.URL.Path == "/api/v1/nhi-agent/connect" {
+			f.connects++
+			if f.suspended {
+				http.Error(w, `{"error":{"code":"ATTESTATION_FAILED","message":"Identity verification failed"}}`, http.StatusForbidden)
+				return
+			}
+			f.newSession = "session-" + strconv.Itoa(f.connects)
+			_ = json.NewEncoder(w).Encode(map[string]string{"session_id": f.newSession, "status": "active"})
+			return
+		}
 		if !strings.HasSuffix(r.URL.Path, "/unwrap") {
 			http.NotFound(w, r)
 			return
 		}
 		f.unwraps++
+		if f.suspended {
+			f.sessionGone = true
+		}
+		if (f.sessionGone || f.newSession != "") && r.Header.Get("X-NHI-Session") != f.newSession {
+			http.Error(w, `{"error":{"code":"UNAUTHORIZED"}}`, http.StatusUnauthorized)
+			return
+		}
+		if f.disabled {
+			code := "SECRET_DISABLED"
+			if f.lockCode != "" {
+				code = f.lockCode
+			}
+			http.Error(w, `{"error":{"code":"`+code+`","message":"withheld"}}`, http.StatusConflict)
+			return
+		}
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		id := parts[len(parts)-2]
 		key, ok := f.keys[id]
@@ -110,6 +149,8 @@ type fakeConnector struct {
 	// onRefresh replaces what is served once a refresh is asked for, standing in
 	// for a connector catching up with a rotation.
 	onRefresh map[string]sealedEnvelope
+	// disabled answers 409, as the connector does once CoreLink says disabled.
+	disabled bool
 }
 
 // A plain handler rather than a ServeMux pattern. This module declares go 1.21,
@@ -130,6 +171,10 @@ func (f *fakeConnector) handler() http.Handler {
 			if updated, ok := f.onRefresh[name]; ok {
 				f.envelopes[name] = updated
 			}
+		}
+		if f.disabled {
+			http.Error(w, "the secret is disabled", http.StatusConflict)
+			return
 		}
 		env, ok := f.envelopes[name]
 		if !ok {
