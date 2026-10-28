@@ -311,6 +311,16 @@ func (c *Client) Close() {
 
 // ------------------------------------------------------------------ NHI mode
 
+// withAgentType sets agent_type on meta. ComputeFingerprint returns a nil map
+// when it fails, so a nil meta is replaced with an empty one.
+func withAgentType(meta map[string]string, agentType string) map[string]string {
+	if meta == nil {
+		meta = map[string]string{}
+	}
+	meta["agent_type"] = agentType
+	return meta
+}
+
 // nhiConnect authenticates with the platform via attestation evidence.
 // The environment is auto-detected (Kubernetes service account token, or host
 // fingerprint as fallback). On success it stores the returned session ID and
@@ -323,7 +333,7 @@ func (c *Client) nhiConnect() error {
 
 	// Collect metadata for the admin approval UI.
 	_, meta, _ := ComputeFingerprint(c.nhiID)
-	meta["agent_type"] = "sdk-client"
+	meta = withAgentType(meta, "sdk-client")
 
 	// evidence must not be logged -- it may contain a Kubernetes SA token.
 	body, _ := json.Marshal(map[string]interface{}{
