@@ -50,7 +50,7 @@ read it.
 For Kubernetes the image is published and pulls anonymously:
 
 ```
-ghcr.io/tech-blend-consulting/corelink-connector:1.28.125
+ghcr.io/tech-blend-consulting/corelink-connector:1.28.135
 ```
 
 For a host, download the binary from the registry. To host the image yourself,
@@ -58,7 +58,7 @@ For a host, download the binary from the registry. To host the image yourself,
 
 ```bash
 cd connector
-docker build --build-arg VERSION=1.28.125 -t corelink-connector:1.28.125 .
+docker build --build-arg VERSION=1.28.135 -t corelink-connector:1.28.135 .
 ```
 
 The binary itself is published per platform at
