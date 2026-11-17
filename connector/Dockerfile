@@ -14,7 +14,7 @@
 #
 #   docker buildx build --platform linux/arm64 --build-arg VERSION=1.28.2 .
 
-FROM alpine:3.24.3 AS fetch
+FROM alpine:3.24.4 AS fetch
 
 ARG VERSION
 ARG TARGETARCH
@@ -37,7 +37,7 @@ RUN case "$(uname -m)" in x86_64) want=3e ;; aarch64) want=b7 ;; \
  && got=$(od -An -tx1 -j18 -N1 /usr/local/bin/corelink-transit-agent | tr -d ' ') \
  && if [ "$got" != "$want" ]; then echo "/usr/local/bin/corelink-transit-agent is not $(uname -m) (ELF machine $got, TARGETARCH $TARGETARCH)" >&2; exit 1; fi
 
-FROM alpine:3.24.3
+FROM alpine:3.24.4
 
 # image.source is what a registry and a tooling chain read to get from an image
 # back to the repository it was built from; without it this image described

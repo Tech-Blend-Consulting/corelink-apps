@@ -417,6 +417,11 @@ func openEnvelope(sealedB64 string, dek []byte, secretID string, version int) ([
 	if err != nil {
 		return nil, fmt.Errorf("transit: preparing AES-GCM: %w", err)
 	}
+	// The envelope is untrusted until it authenticates, and gcm.Open panics on a
+	// nonce of the wrong length rather than returning an error.
+	if len(body.Nonce) != gcm.NonceSize() {
+		return nil, ErrEnvelopeCorrupt
+	}
 	plaintext, err := gcm.Open(nil, body.Nonce, body.EncryptedData, effective)
 	if err != nil {
 		// The key was for the version the envelope claims and the binding

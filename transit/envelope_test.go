@@ -378,6 +378,33 @@ func TestAnAlteredEnvelopeIsReportedAsCorrupt(t *testing.T) {
 	}
 }
 
+// A nonce of the wrong length must be reported as corruption, not panic inside
+// gcm.Open.
+func TestOpenEnvelopeWrongLengthNonce(t *testing.T) {
+	dek := make([]byte, 32)
+	if _, err := rand.Read(dek); err != nil {
+		t.Fatalf("rand: %v", err)
+	}
+	for _, bound := range []bool{true, false} {
+		for _, n := range []int{0, 3, 40} {
+			t.Run(fmt.Sprintf("bound=%v/nonce=%d", bound, n), func(t *testing.T) {
+				body := envelopeBody{EncryptedData: make([]byte, 32), Nonce: make([]byte, n)}
+				if bound {
+					body.AAD = secretAAD("id", 1)
+				}
+				raw, err := json.Marshal(body)
+				if err != nil {
+					t.Fatalf("marshal: %v", err)
+				}
+				_, err = openEnvelope(base64.StdEncoding.EncodeToString(raw), dek, "id", 1)
+				if !errors.Is(err, ErrEnvelopeCorrupt) {
+					t.Errorf("error was %v, want ErrEnvelopeCorrupt", err)
+				}
+			})
+		}
+	}
+}
+
 func TestOnlyPlatformCallsGoThroughTheConnectorTunnel(t *testing.T) {
 	// The tunnel reaches the platform and nothing else, so sending the
 	// connector's own endpoints through it would have them refused. Proven by
