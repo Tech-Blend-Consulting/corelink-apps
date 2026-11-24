@@ -23,6 +23,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -62,6 +63,7 @@ type Options struct {
 	HTTPTimeout time.Duration
 	// CACertFile is the path to the transit agent CA certificate for HTTPS
 	// verification. When non-empty, the client pins TLS verification to this CA.
+	// If the file cannot be read or contains no certificates, network calls fail.
 	CACertFile string
 	// Attest supplies the attestation to present, instead of the SDK detecting
 	// one.
@@ -113,15 +115,16 @@ type Config struct {
 
 // Client is a thread-safe Transit API client.
 type Client struct {
-	opts options
-	url  string
+	opts    options
+	url     string
+	initErr error
 
 	// NHI session fields. sessionMu guards sessionID exclusively.
 	nhiID       string
 	attest      AttestFunc
 	platformURL string
-	// names maps configured secret names to platform ids, resolved once in
-	// direct mode. See direct.go.
+	// names maps configured secret names to platform ids; only a successful
+	// listing is kept, and a missing name re-lists. See direct.go.
 	names     nameIndex
 	sessionID string
 	// refusedAt is when CoreLink last refused this identity; a reconnect is
@@ -129,6 +132,17 @@ type Client struct {
 	// per address and the answer will not change that quickly.
 	refusedAt time.Time
 	sessionMu sync.Mutex
+
+	// connectMu serialises nhiConnect so callers that hit a 401 together share
+	// one reconnect instead of each running their own.
+	connectMu sync.Mutex
+	// loopOnce starts the heartbeat loop once for the life of the client;
+	// reconnects only replace sessionID.
+	loopOnce   sync.Once
+	loopStarts atomic.Int32
+	// pollEvery overrides the approval poll interval. Zero means 5 seconds;
+	// only tests set it.
+	pollEvery time.Duration
 
 	stopCh     chan struct{}
 	httpClient *http.Client
@@ -163,12 +177,17 @@ func New(opts Options) *Client {
 	opts.HTTPTimeout = timeout
 
 	transport := &http.Transport{}
+	var initErr error
 	if opts.CACertFile != "" {
 		caCert, err := os.ReadFile(opts.CACertFile)
-		if err == nil {
+		if err != nil {
+			initErr = fmt.Errorf("transit: read CA certificate file %q: %w", opts.CACertFile, err)
+		} else {
 			pool := x509.NewCertPool()
 			if pool.AppendCertsFromPEM(caCert) {
 				transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+			} else {
+				initErr = fmt.Errorf("transit: CA certificate file %q contains no certificates", opts.CACertFile)
 			}
 		}
 	}
@@ -207,6 +226,7 @@ func New(opts Options) *Client {
 		stopCh:      make(chan struct{}),
 		httpClient:  httpClient,
 		onUnbound:   opts.OnUnboundEnvelope,
+		initErr:     initErr,
 	}
 
 	return c
@@ -326,6 +346,25 @@ func withAgentType(meta map[string]string, agentType string) map[string]string {
 // fingerprint as fallback). On success it stores the returned session ID and
 // starts the heartbeat loop.
 func (c *Client) nhiConnect() error {
+	if c.initErr != nil {
+		return c.initErr
+	}
+
+	c.sessionMu.Lock()
+	entrySID := c.sessionID
+	c.sessionMu.Unlock()
+
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
+	// Another caller reconnected while this one waited: its session serves us.
+	c.sessionMu.Lock()
+	changed := c.sessionID != "" && c.sessionID != entrySID
+	c.sessionMu.Unlock()
+	if changed {
+		return nil
+	}
+
 	attestType, evidence, err := c.collectAttestation()
 	if err != nil {
 		return fmt.Errorf("transit: collect attestation: %w", err)
@@ -400,7 +439,10 @@ func (c *Client) nhiConnect() error {
 	c.sessionID = data.SessionID
 	c.sessionMu.Unlock()
 
-	go c.nhiRefreshLoop()
+	c.loopOnce.Do(func() {
+		c.loopStarts.Add(1)
+		go c.nhiRefreshLoop()
+	})
 	return nil
 }
 
@@ -414,8 +456,19 @@ func (c *Client) pollApproval(sessionID string) error {
 
 	url := c.platformURL + "/api/v1/nhi-agent/connect/" + sessionID + "/status"
 
+	interval := pollInterval
+	if c.pollEvery > 0 {
+		interval = c.pollEvery
+	}
+
 	for i := 0; i < maxAttempts; i++ {
-		time.Sleep(pollInterval)
+		timer := time.NewTimer(interval)
+		select {
+		case <-c.stopCh:
+			timer.Stop()
+			return fmt.Errorf("client closed while waiting for approval")
+		case <-timer.C:
+		}
 
 		resp, err := c.httpClient.Get(url)
 		if err != nil {
@@ -528,6 +581,9 @@ func (c *Client) nhiDisconnect() {
 // authedGet performs an authenticated GET request using the NHI session.
 // On 401 the session is renewed via nhiConnect and the request is retried once.
 func (c *Client) authedGet(url string) (*http.Response, error) {
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

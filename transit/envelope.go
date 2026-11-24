@@ -253,6 +253,9 @@ func (c *Client) openSealed(name string, refresh bool) (string, error) {
 // Unauthenticated, because the connector has nothing to decide: what it serves
 // cannot be opened without a grant CoreLink checks.
 func (c *Client) fetchEnvelope(name string, refresh bool) (*sealedEnvelope, error) {
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
 	path, err := envelopePath(name)
 	if err != nil {
 		return nil, err
@@ -288,6 +291,9 @@ func (c *Client) fetchEnvelope(name string, refresh bool) (*sealedEnvelope, erro
 
 // postUnwrap sends one unwrap request under the current session.
 func (c *Client) postUnwrap(secretID string) (*http.Response, error) {
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
 	endpoint := c.platformURL + "/api/v1/nhi-agent/secrets/" + url.PathEscape(secretID) + "/unwrap"
 	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
 	if err != nil {
